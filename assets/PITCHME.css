@@ -11,7 +11,7 @@ span.byline, span.aside {
 }
 
 span.byline {
-  font-size: 80%;
+k font-size: 80%;
 }
 
 span.aside {
@@ -67,3 +67,18 @@ span.aside {
 .reveal a.pro-link {
     font-size: 0.5em;
 }
+
+.reveal p {
+  font-size: 0.5em;
+  line-height: 1.1;
+}
+
+.reveal pre code {
+  font-size: 0.6em;
+  line-height: 1.0;
+}
+
+.reveal pre {
+  width: 90%;
+}
+
