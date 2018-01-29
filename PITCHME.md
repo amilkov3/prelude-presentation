@@ -81,7 +81,7 @@ sync[F](mongo.insert(caseClassInst.toDBObject))
 ```
 
 So you see how we can very neatly compose an expression tree, an in memory representation of our program
-that can be executed when we so choose, making it easier to reason about what we're writing and increasing
+that can be executed when we so choose, via `unsafePerformIO()` or async via `unsafePerformAsync(cb)` making it easier to reason about what we're writing and increasing
 testability
 
 ---
@@ -110,7 +110,7 @@ main = do
   putStrLn res
 ```
 
-Obviously the equivalent in Scala would akin to:
+Obviously the equivalent in Scala would be akin to:
 
 ```scala
 for {
@@ -126,5 +126,103 @@ more explicit semantics behind whatever computation you are performing
 
 ---
 
+# Utils
 
-No shit like `Future(5)` which is run immediately, producing some evaluted (eventually expression). i.e. you have no control over when the expression is actually run. Compare that to
+Piggy backing off of effect abstraction:
+* Effect typeclasses
+
+Which will serve as the foundation for:
+* HTTP wrapper
+* Cache wrapper
+
+And then some unrelated useful components:
+* Error hierarchy
+* Json
+* Geo
+
+---
+
+### HTTP
+
+Here's what the interface looks like:
+
+```scala
+trait EfJsonHttpClient[F[_]] extends {
+
+  // `JsonDecodable` just points to typeclass `io.circe.Decoder[A]`
+  def get[A: JsonDecodable](url: Url): F[HttpResponse[Either[JsonErr, A]]]
+
+  // same with `JsonEncodable`
+  def post[A: JsonEncodable](
+    url: Url,
+    body: A,
+    headers: Map[String, String] = Map.empty
+  ): F[HttpResponse[Unit]]
+}
+
+
+```
+
+This is a simple wrapper around the `com.softwaremill.sttp` library, which already employs a similar effect abstraction pattern
+and allows you to wrap whatever underlying client you so choose
+
+
+---
+
+### And our impl
+
+```scala
+final class JsonHttpClient[F[_]: Effect](
+  conf: HttpConfig
+  )(implicit ev: SttpBackend[F, Nothing])
+  extends EfJsonHttpClient[F]{
+
+  private val baseC = sttp.readTimeout(conf.connectionTimeout)
+
+  def respAsJson[B](implicit ev: JsonDecodable[B]): ResponseAs[Either[JsonErr, B], Nothing] = {
+    asString.map{s =>
+      for {
+        json <- Json.parse(s).leftMap(_.asInstanceOf[JsonErr])
+        b <- ev.decodeJson(json.repr).leftMap(err => (new JsonDecodeErr(err.getMessage())): JsonErr)
+      } yield b
+    }
+  }
+
+  override def get[A: JsonDecodable](url: Url): F[HttpResponse[Either[JsonErr, A]]] = {
+    baseC
+      .get(SUrl(
+        url.scheme.asString,
+        None,
+        url.host.repr,
+        None,
+        url.path.toList,
+        List.empty[SUrl.QueryFragment],
+        None
+      ))
+      .response(respAsJson[A])
+      .send[F]()
+      .map(new HttpResponse(_))
+  }
+
+  override def post[A: JsonEncodable](
+    url: Url,
+    body: A,
+    headers: Map[String, String]
+  ): F[HttpResponse[Unit]] = {
+    baseC
+      .post(Url(
+        url.scheme.asString,
+        None,
+        url.host.repr,
+        url.port,
+        url.path.toList,
+        List.empty[Url.QueryFragment],
+        None
+      ))
+      .body(body.toJson.spaces2, StandardCharsets.UTF_8.name)
+      .send[F]()
+      .map(new HttpResponse(_).mapBody(_ => ()))
+  }
+}
+```
+
