@@ -3,7 +3,7 @@
 
 ---
 
-# Motivation
+## Motivation
 
 * Basically (well obviously to you guys) I'm trying to write Haskell in Scala because Haskell gets a lot of things right:
 1. All effects must be performed inside of the `IO` monad, thereby forcing the developer to handle/reason about them appropriately
@@ -12,7 +12,7 @@
 
 ---
 
-# 1. Effect Abstraction
+### 1. Effect Abstraction
 
 We've all seen code like this which is perfectly legal regretably:
 
@@ -40,7 +40,7 @@ def find[F: Sync](q: DBOBject) = sync[F](mongoUserColl.find(q))
 
 ---
 
-#2 Referential transparity
+### 2 Referential transparity
 
 ```scala
 val ref: F[Either[Throwable, WriteResult]] = find(someQuery).attempt
@@ -84,7 +84,7 @@ testability
 
 ---
 
-#3 No imperative muddling
+### 3 No imperative muddling
 
 We've all seen shit like this:
 
