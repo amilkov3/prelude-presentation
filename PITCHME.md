@@ -88,17 +88,18 @@ testability
 
 ### 3. No imperative muddling
 
-We've all seen shit like this:
+Code like this evince bad memories?
 
 ```scala
-def spareMe = {
+def pleaseFixMe = {
   val a = performSomeSideEffectReturningA
   val b = decodeABFromANotCatchingExceptions(a)
-  b * 3 + 2 // oh god
+  b.setFoo(new Foo(2)) // oh god
+  b
 }
 ```
 
-This is Java, not Scala
+This is Java, not Scala, or at least not functional Scala
 
 In Haskell the only way to simulate imperative programming is via monadic composition
 
@@ -126,19 +127,19 @@ more explicit semantics behind whatever computation you are performing
 
 ---
 
-# Utils
+### Utils
 
 Piggy backing off of effect abstraction:
-* Effect typeclasses
+* _Effect typeclasses_
 
 Which will serve as the foundation for:
-* HTTP wrapper
-* Cache wrapper
+* _HTTP wrapper_
+* _Cache wrapper_
 
 And then some unrelated useful components:
-* Error hierarchy
-* Json
-* Geo
+* _Error hierarchy_
+* _Json_
+* _Geo_
 
 ---
 
