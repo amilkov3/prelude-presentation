@@ -5,16 +5,140 @@
 
 ## Motivation
 
-Basically (well obviously to you guys) I'm trying to write Haskell in Scala because Haskell gets a lot of things right:
+`Functional programming + static typing = Haskell`
 
-1. _Effect Abstraction_
-2. _Referential Transparency_
-3. _No imperative muddling_
+`... Functional programming + static typing ... = Scala`
+
+`Scala --> Haskell`
+
+#### Primer
+
+- Referential Transparency |
+- Composition over Imperativity |
+
+#### Meat
+
+- Effect Abstraction |
+
+<!--  hello -->
 
 ---
 
-### 1. Effect Abstraction
+### Referential Transparity
 
+_An expression can be replaced by its value (or anything with the same value) without changing
+the results of the program_
+
+```scala
+val x = println("non RT")
+f(x, x)
+
+def x = println("RT")
+f(x, x)
+
+val x = Future(println("non-RT"))
+```
+
+@[4-5](But `println` is still non RT  where the equivalent in Haskell, `putStrLn`, is due to lazyness)
+@[7](The fundamental concurrency primitive is non RT)
+
+#### Benefits:
+
+- Reasonability |
+- Testability |
+- Express programs as in memory expression trees |
+
+[//]: # (hello)
+
+---
+
+### Composition over Imperitivity
+
+Code like this evince bad memories?
+
+```scala
+def pleaseFixMe(something: Int) = {
+  val a = performSomeSideEffectReturningA
+  val b = decodeABFromANotCatchingExceptions(a)
+  b.setFoo(new Foo(something)) // oh god
+  b
+}
+```
+
+[//]: # (You're assigning arbitrary expressions, which may or may not occur in a context, monadic or not, to vals, which then may or may not be used but may depend on a previous imperative declaration, and you're mutating a val)
+
+---
+
+Haskell forbids such an imperative style but can be mimiced with:
+
+```haskell
+test :: Int
+test = let x = 2
+           y = x + 2
+       in x + y + z + a
+       where z = 2
+             a = z + 2
+
+readIn :: IO ()
+readIn = do
+  line <- getLine
+  let res = "you said: " ++ line
+  putStrLn res
+
+```
+@[2-4](let clause)
+@[5-6](where clause)
+@[8-12](monadic composition)
+
+---
+
+```scala
+for {
+  x <- Some(5)
+  y <- Some(x + 3)
+} yield y
+```
+
+@[1-4](That last Haskell example should look familiar to)
+
+#### Benefits
+
+* Reasonability |
+* Testability |
+* Monadic context |
+
+[//]: # (Testability -- via composability since you can test individual functions or chained functions)
+
+[//]: # (Anyway the benefit to modeling imperativity like this is that you have think of and compose things inside of an appropriate monadic context (for effects that would be `IO`, for things that may throw exceptions `Either`, for values that may or may not be there `Option` (or `Maybe`)
+
+---
+
+### So how can we apply composition and RT to side-effect?
+
+---
+
+### IO
+
+The trouble with Scala
+
+```scala
+val res: Array[Byte] = httpClient.get("https://en.wikipedia.org/wiki/Side_effect_(computer_science)")
+```
+
+@[1](This is perfectly legal)
+
+Where Haskell requires you perform all effects in `IO` So we need an `IO` monad for Scala that
+has referential transparity as a property unlike `Future` for example
+
+#### Enter `cats-effect`
+
+---
+
+![typeclasses](assets/cats-effect.png)
+
+---
+
+### Effect Abstraction
 
 We've all seen code like this which is perfectly legal regretably:
 
@@ -88,16 +212,6 @@ testability
 
 ### 3. No imperative muddling
 
-Code like this evince bad memories?
-
-```scala
-def pleaseFixMe = {
-  val a = performSomeSideEffectReturningA
-  val b = decodeABFromANotCatchingExceptions(a)
-  b.setFoo(new Foo(2)) // oh god
-  b
-}
-```
 
 This is Java, not Scala, or at least not functional Scala
 
@@ -120,9 +234,7 @@ for {
 } yield y
 ```
 
-Anyway the benefit to modeling imperativity like this is that you have think of and compose things
-inside of an appropriate monadic context (for effects that would be `IO`, for things that may throw exceptions `Either`,
-for values that may or may not be there `Option` (or `Maybe`)) which generally leads to, again, increased composability and
+ which generally leads to, again, increased composability and
 more explicit semantics behind whatever computation you are performing
 
 ---

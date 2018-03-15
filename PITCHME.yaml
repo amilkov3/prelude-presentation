@@ -4,5 +4,5 @@ theme: sky
 # background-size : cover
 logo: assets/scala-logo.png
 highlight: atom-one-dark
-transition: none
+transition: slide
 theme-override : assets/PITCHME.css
