@@ -1,5 +1,8 @@
 
-theme: moon
+theme: sky
 # background: assets/scala.jpeg
 # background-size : cover
+logo: assets/scala-logo.png
+highlight: atom-one-dark
+transition: none
 theme-override : assets/PITCHME.css
