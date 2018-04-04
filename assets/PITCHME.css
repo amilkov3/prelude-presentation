@@ -93,6 +93,7 @@ body {
 
 .reveal pre {
   width: 90%;
+  height: 100%;
   box-shadow : none;
 }
 
