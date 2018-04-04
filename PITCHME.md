@@ -140,13 +140,15 @@ Where Haskell requires you perform all effects in `IO`. So we need a referential
 val res: IO[Array[Byte]] = IO(httpClient.get("https://en.wikipedia.org/wiki/Side_effect_(computer_science)"))
 ```
 
+---
+
 We can take this further by programming against a typeclass API instead of a concrete impl
 
 ```scala
 def getArticle[F[_]](implicit ev: Sync[F]): F[Array[Byte]] =
   ev.delay(httpClient.get("https://en.wikipedia.org/wiki/Side_effect_(computer_science)"))
 
-getArticle[IO].unsafePerformSync
+getArticle[IO].unsafePerformSync()
 
 (IO.shift(ec) *> getArticle[IO]).runAsync{
   case Right(_) => IO.unit
@@ -155,8 +157,8 @@ getArticle[IO].unsafePerformSync
 
 ```
 
-@[2-3](`Sync` typeclass has a lazy `delay` method to suspend an effect)
-@[5](Perform effect)
+@[1-3](`Sync` typeclass has a lazy `delay` method to suspend an effect)
+@[4](Perform effect)
 @[6-9](`Async` typeclass has `runAsync` method for composing an RT callback)
 
 ---
@@ -697,7 +699,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
 
 ---
 
-Done!
+### Done!
 
 * https://github.com/amilkov3/prelude-utils
 * Gitter: amilkov1
