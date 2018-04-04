@@ -242,8 +242,8 @@ class JsonHttpClient[F[_]: Effect](
 }
 ```
 
-@[5-27](`get`)
-@[29-48](`post`)
+@[5-29](`get`)
+@[29-50](`post`)
 
 ---
 
