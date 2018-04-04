@@ -573,7 +573,7 @@ case class ServiceUnreachable (
 
 ---
 
-### A more nuanced example of programming in terms of the `cats-effect` typeclass API: Mongo driver wrapper
+##### A more nuanced example of programming in terms of the `cats-effect` typeclass API: Mongo driver wrapper
 
 ---
 
@@ -590,87 +590,87 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
     tt: TypeTag[A]
   ): F[Unit] = {
     checkUniquenessWith.isEmpty.fold(
-          ().pure[F],
-          repr.findOne(checkUniquenessWith).empty.fold(
-            ().pure[F],
-            ApplicativeError[F, Throwable].raiseError[Unit](
-              new UpsException(
-                UpstreamFailure(DuplicateRecord(a))
-              )
+      ().pure[F],
+      Effect[F].delay(repr.findOne(checkUniquenessWith)).flatMap(_.empty.fold(
+        ().pure[F],
+        ApplicativeError[F, Throwable].raiseError[Unit](
+          new UpsException(
+            UpstreamFailure(DuplicateRecord(a))
+          )
+        )
+      ))
+    ).attempt
+      .flatMap(either =>
+        ApplicativeError[F, Throwable].fromEither[WriteResult](
+          either.map(_ => repr.insert(new BasicDBObject(ev.encode(a))))
+        )
+      )
+      .handleErrorWith {
+        case dupErr: UpsException =>
+          ApplicativeError[F, Throwable].raiseError[WriteResult](dupErr)
+        case ex =>
+          ApplicativeError[F, Throwable].raiseError[WriteResult](
+            new UpsException(
+              UpstreamFailure(WriteFailure(ex.getMessage))
             )
           )
-        ).attempt
-          .flatMap(either =>
-            ApplicativeError[F, Throwable].fromEither[WriteResult](
-              either.map(_ => repr.insert(new BasicDBObject(ev.encode(a))))
-            )
+      }.flatMap {
+      _.wasAcknowledged().fold(
+        ().pure[F],
+        ApplicativeError[F, Throwable].raiseError[Unit](
+          new UpsException(
+            UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
           )
-          .handleErrorWith {
-            case dupErr: UpsException =>
-              ApplicativeError[F, Throwable].raiseError[WriteResult](dupErr)
-            case ex =>
-              ApplicativeError[F, Throwable].raiseError[WriteResult](
-                new UpsException(
-                  UpstreamFailure(WriteFailure(ex.getMessage))
-                )
-              )
-          }.flatMap {
-          _.wasAcknowledged().fold(
-            ().pure[F],
-            ApplicativeError[F, Throwable].raiseError[Unit](
-              new UpsException(
-                UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
-              )
-            )
-          )
-        }
+        )
+      )
     }
+  }
 
   def upsertOneF[A <: Product, F[_] : Effect](
-      a: A,
-      queryDbO: DBObject,
-      upsert: Boolean = true
-    )(implicit
-      ev: BsonCodec.Aux[A, BsonDocument],
-      tt: TypeTag[A]
-    ): F[Boolean] = {
-        delay[F](repr.update(queryDbO, new BasicDBObject(ev.encode(a)), upsert))
-          .handleErrorWith {
-            case _: DuplicateKeyException =>
-              ApplicativeError[F, Throwable].raiseError[WriteResult](
-                new UpsException(
-                  UpstreamFailure(DuplicateRecord(a))
-                )
-              )
-            case ex =>
-              ApplicativeError[F, Throwable].raiseError[WriteResult](
-                new UpsException(
-                  UpstreamFailure(WriteFailure(ex.getMessage))
-                )
-              )
-          }.flatMap {
-          res => res.wasAcknowledged().fold(
-            (res.getN() == 1).fold(
-              (!res.isUpdateOfExisting()).pure[F],
-              ApplicativeError[F, Throwable].raiseError[Boolean](
-                new UpsException(
-                  UpstreamFailure(RecNotFound(
-                    s"${upsert.fold("upsert failed", "update failed. Record likely not found.")}. Record queried with: ${queryDbO.asString}"
-                  ))
-                )
-              )
-            ),
-            ApplicativeError[F, Throwable].raiseError[Boolean](
-              new UpsException(
-                UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
-              )
+    a: A,
+    queryDbO: DBObject,
+    upsert: Boolean = true
+  )(implicit
+    ev: BsonCodec.Aux[A, BsonDocument],
+    tt: TypeTag[A]
+  ): F[Boolean] = {
+    Effect[F].delay[F](repr.update(queryDbO, new BasicDBObject(ev.encode(a)), upsert))
+      .handleErrorWith {
+        case _: DuplicateKeyException =>
+          ApplicativeError[F, Throwable].raiseError[WriteResult](
+            new UpsException(
+              UpstreamFailure(DuplicateRecord(a))
             )
           )
-        }
-    }
+        case ex =>
+          ApplicativeError[F, Throwable].raiseError[WriteResult](
+            new UpsException(
+              UpstreamFailure(WriteFailure(ex.getMessage))
+            )
+          )
+      }.flatMap {
+        res => res.wasAcknowledged().fold(
+          (res.getN() == 1).fold(
+            (!res.isUpdateOfExisting()).pure[F],
+            ApplicativeError[F, Throwable].raiseError[Boolean](
+              new UpsException(
+                UpstreamFailure(RecNotFound(
+                  s"${upsert.fold("upsert failed", "update failed. Record likely not found.")}. Record queried with: ${queryDbO.asString}"
+                ))
+              )
+            )
+          ),
+          ApplicativeError[F, Throwable].raiseError[Boolean](
+            new UpsException(
+              UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
+            )
+          )
+        )
+      }
+  }
 
   def deleteOneF[F[_]: Effect](queryDbO: DBObject): F[Unit] = {
-    delay[F](repr.findAndRemove(queryDbO))
+    Effect[F].delay[F](repr.findAndRemove(queryDbO))
       .flatMap(_.isDefined.fold(
         ().pure[F],
         ApplicativeError[F, Throwable].raiseError[Unit](
@@ -682,7 +682,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
   }
 
   def deleteManyF[F[_]: Effect](queryDbO: DBObject): F[Unit] = {
-    delay[F](repr.remove(queryDbO))
+    Effect[F].delay[F](repr.remove(queryDbO))
       .flatMap(_.wasAcknowledged().fold(
         ().pure[F],
         ApplicativeError[F, Throwable].raiseError[Unit](
@@ -694,6 +694,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
         )
       ))
   }
+}
 
 ```
 
