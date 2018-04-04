@@ -154,13 +154,96 @@ def getArticle[F[_]](implicit ev: Sync[F]): F[Array[Byte]] =
 ### Utils
 
 This pattern will serve as the foundation for:
-* _HTTP wrapper_
-* _Cache wrapper_
+* HTTP wrapper
+* Cache wrapper
 
 And then some unrelated useful components:
 * _Error hierarchy_
 * _Json_
 * _Geo_
+
+---
+
+### HTTP wrapper
+
+Lets start with our interface
+
+```scala
+abstract class EfJsonHttpClient[F[_]: Effect] {
+
+  def get[A: Decoder](
+    url: Url,
+    headers: Map[String, String] = Map.empty
+  ): F[HttpResponse[Either[JsonErr, A]]]
+
+  def post[A: Encoder](
+    url: Url,
+    body: A,
+    headers: Map[String, String] = Map.empty
+  ): F[HttpResponse[Unit]]
+}
+```
+
+---
+
+#### Wrap `com.softwaremill.sttp`
+
+```scala
+class JsonHttpClient[F[_]: Effect](
+  conf: HttpClientConf
+)(implicit ev: SttpBackend[F, Nothing]) extends EfJsonHttpClient[F]{
+
+  private val client = sttp.sttp.readTimeout(conf.readTimeout)
+
+  override def get[A: JsonDecodable](
+    url: Url,
+    headers: Map[String, String] = Map.empty
+  ): F[HttpResponse[Either[JsonErr, A]]] = {
+    client
+      .get(SUrl(
+        url.isHttps.fold("https", "http"),
+        None,
+        url.host.repr,
+        None,
+        url.path.toList,
+        List.empty[SUrl.QueryFragment],
+        None
+      ))
+      .headers(headers)
+      .response(sttp.asString.map{s =>
+        for {
+          json <- Json.parse(s).leftMap(err => JsonParseErr(err.message): JsonErr)
+          a <- json.as[A].leftMap(err => JsonDecodeErr(err.message): JsonErr)
+        } yield a
+      })
+      .send[F]()
+  }
+
+  override def post[A: JsonEncodable](
+    url: Url,
+    body: A,
+    headers: Map[String, String]
+  ): F[HttpResponse[Unit]] = {
+    client
+      .post(SUrl(
+        url.isHttps.fold("https", "http"),
+        None,
+        url.host.repr,
+        url.port,
+        url.path.toList,
+        List.empty[SUrl.QueryFragment],
+        None
+      ))
+      .headers(headers)
+      .body(body.asJson.spaces2, StandardCharsets.UTF_8.name)
+      .send[F]()
+      .map(r => r.copy(body = r.body.map(_ => ())))
+  }
+}
+```
+
+@[5-27](`get`)
+@[29-48](`post`)
 
 ---
 
