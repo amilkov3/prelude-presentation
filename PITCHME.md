@@ -305,6 +305,102 @@ object CacheableKVPair {
 
 ---
 
+### Cache wrapper
+
+```scala
+trait EfCacheClient[F[_], KK, VV] {
+  def get[K, V](k: K)(implicit
+    ev1: CacheableKVPair.Aux[K, V],
+    ev2: SerializableKV.Aux[K, KK],
+    ev3: DeserializableV.Aux[VV, V]
+  ): F[Option[Either[AppFailure, V]]]
+
+  def put[K, V](k: K, v: V)(implicit
+    ev1: CacheableKVPair.Aux[K, V],
+    ev2: SerializableKV.Aux[K, KK],
+    ev3: SerializableKV.Aux[V, VV]
+  ): F[Unit]
+}
+
+abstract class EfBaseCacheClient[F[_]: Effect, KK, VV] extends EfCacheClient[F, KK, VV] {
+
+  override final def get[K, V](k: K)(implicit
+    ev1: CacheableKVPair.Aux[K, V],
+    ev2: SerializableKV.Aux[K, KK],
+    ev3: DeserializableV.Aux[VV, V]
+  ): F[Option[Either[AppFailure, V]]] = {
+    Effect[F].pure(
+      get(ev2.serialize(k)).map(ev3.deserialize)
+    )
+  }
+
+  override final def put[K, V](k: K, v: V)(implicit
+    ev1: CacheableKVPair.Aux[K, V],
+    ev2: SerializableKV.Aux[K, KK],
+    ev3: SerializableKV.Aux[V, VV]
+  ): F[Unit] = {
+    Effect[F].pure(
+      put(ev2.serialize(k), ev3.serialize(v))
+    )
+  }
+
+  protected def get(k: KK): Option[VV]
+
+  protected def put(k: KK, v: VV): Unit
+}
+```
+
+@[1-13](Interface for generic client)
+@[15-40](Base impl)
+
+---
+
+### Example
+
+```scala
+case class Foo(x: String, y: Int)
+case class Bar(a: Double, b: Boolean)
+
+implicit val serializableKVFoo: SerializableKV.Aux[Foo, String] =
+  SerializableKV.instance[Foo, String](foo => s"${foo.x},${foo.y}")
+
+implicit val serializableKVBar: SerializableKV.Aux[Bar, Array[Byte]] =
+  SerializableKV.instance[Bar, Array[Byte]](
+    Codec[Bar].encode(_).toEither.asRight.toByteArray
+  )
+
+case object DeserializationFailure extends InternalComponent
+
+implicit val deserializableV: DeserializableV.Aux[Array[Byte], Bar] =
+  DeserializableV.instance[Array[Byte], Bar](
+    ba => Codec[Bar].decode(BitVector(ba))
+      .toEither
+      .leftMap(err => InternalFailure(err.message, DeserializationFailure))
+      .map(_.value)
+  )
+
+implicit val cacheableKVPair: CacheableKVPair.Aux[Foo, Bar] = CacheableKVPair.instance
+
+final class MemCacheClient[F[_]: Effect, KK, VV] extends EfBaseCacheClient[F, KK, VV] {
+
+  val cache  = scala.collection.mutable.Map.empty[KK, VV]
+
+  override protected def get(k: KK): Option[VV] = cache.get(k)
+
+  override protected def put(k: KK, v: VV): Unit = cache.put(k, v)
+}
+
+val cacheClient = new MemCacheClient[Id, String, Array[Byte]]
+
+property("should put and get, serializing and deserializing correctly") {
+  val foo = Foo("hello", 2)
+  cacheClient.put[Foo, Bar](foo, Bar(1.5d, true))
+  cacheClient.get[Foo, Bar](foo).asSome.asRight
+}
+```
+
+---
+
 ### Effect Abstraction
 
 We've all seen code like this which is perfectly legal regretably:
