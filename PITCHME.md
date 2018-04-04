@@ -202,7 +202,7 @@ class JsonHttpClient[F[_]: Effect](
 
   private val client = sttp.sttp.readTimeout(conf.readTimeout)
 
-  override def get[A: JsonDecodable](
+  override def get[A: Decoder](
     url: Url,
     headers: Map[String, String] = Map.empty
   ): F[HttpResponse[Either[JsonErr, A]]] = {
@@ -226,10 +226,10 @@ class JsonHttpClient[F[_]: Effect](
       .send[F]()
   }
 
-  override def post[A: JsonEncodable](
+  override def post[A: Encoder](
     url: Url,
     body: A,
-    headers: Map[String, String]
+    headers: Map[String, String] = Map.empty
   ): F[HttpResponse[Unit]] = {
     client
       .post(SUrl(
@@ -482,6 +482,21 @@ property("should put and get, serializing and deserializing correctly") {
 
 ---
 
+### `AppFailure`
+
+```scala
+/** For raising errors inside our effect monad */
+final case class AppException(e: AppFailure) extends Exception(e.message, e.cause.orNull)
+
+/** Top level failure type all concrete UpsFailures inherit from */
+trait AppFailure {
+  def message: String
+  def cause: Option[Throwable]
+}
+```
+
+---
+
 ### `InternalFailure`
 
 ```scala
@@ -706,4 +721,3 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
 * Gitter: amilkov1
 * Email: amilkov3@gmail.com
 
----
