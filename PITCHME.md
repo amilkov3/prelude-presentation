@@ -132,11 +132,22 @@ has referential transparity as a property unlike `Future` for example
 
 #### Enter `cats-effect`
 
----
-
 ---?image=assets/cats-effect.png&position=center&size=auto 80%
 
 ---
+
+```scala
+val res: IO[Array[Byte]] = IO(httpClient.get("https://en.wikipedia.org/wiki/Side_effect_(computer_science)"))
+```
+
+We can take this further by programming against a typeclass API instead of a concrete impl
+
+```scala
+def getArticle[F[_]](implicit ev: Sync[F]): F[Array[Byte]] =
+  ev.delay(httpClient.get("https://en.wikipedia.org/wiki/Side_effect_(computer_science)"))
+```
+
+@[2-3](`Sync` typeclass has a lazy `delay` method to suspend an effect)
 
 ### Effect Abstraction
 
