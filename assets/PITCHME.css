@@ -96,6 +96,10 @@ body {
   box-shadow : none;
 }
 
+.reveal .slides {
+  height: 80%
+}
+
 .reveal pre code {
   font-size: 0.6em;
   line-height: 1.1;
@@ -124,7 +128,6 @@ body {
 .reveal p {
   font-size: 0.55em;
   line-height: 1.0;
-
 }
 
 .reveal div.left {

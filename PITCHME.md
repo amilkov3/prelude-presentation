@@ -24,7 +24,7 @@
 
 ---
 
-### Referential Transparity
+### Referential Transparency
 
 _An expression can be replaced by its value (or anything with the same value) without changing
 the results of the program_
@@ -127,8 +127,8 @@ val res: Array[Byte] = httpClient.get("https://en.wikipedia.org/wiki/Side_effect
 
 @[1](This is perfectly legal)
 
-Where Haskell requires you perform all effects in `IO`. So we need an `IO` monad for Scala that
-has referential transparity as a property unlike `Future` for example
+Where Haskell requires you perform all effects in `IO`. So we need a referentially transparent `IO` monad
+(unlike `Future` for example) for Scala
 
 #### Enter `cats-effect`
 
@@ -145,9 +145,19 @@ We can take this further by programming against a typeclass API instead of a con
 ```scala
 def getArticle[F[_]](implicit ev: Sync[F]): F[Array[Byte]] =
   ev.delay(httpClient.get("https://en.wikipedia.org/wiki/Side_effect_(computer_science)"))
+
+getArticle[IO].unsafePerformSync
+
+(IO.shift(ec) *> getArticle[IO]).runAsync{
+  case Right(_) => IO.unit
+  case Left(e) => IO(logger.error(s"GET article failed with: ${e.getMessage}"))
+}.unsafeRunSync()
+
 ```
 
 @[2-3](`Sync` typeclass has a lazy `delay` method to suspend an effect)
+@[5](Perform effect)
+@[6-9](`Async` typeclass has `runAsync` method for composing an RT callback)
 
 ---
 
@@ -289,8 +299,8 @@ val res: HttpResponse[Either[JsonErr, Post]] =
   client.get[Post](url).unsafeRunSync()
 ```
 
-@[1-28](sttp backend impl and our type)
-@[30-41](our call)
+@[1-29](sttp backend impl and our type)
+@[30-42](our call)
 
 ---
 
@@ -451,20 +461,21 @@ property("should put and get, serializing and deserializing correctly") {
 ### Extraneous additional util features
 
 * App Error Hierarchy
-* `prelude-mongo` -- functional wrapper around Mongo Casbah driver
+* `prelude-mongo`: functional wrapper around Mongo Casbah driver
 
-* `prelude-geo` -- functional wrapper around `jgeohash` Java geo library
+#### Not discussed
+* `prelude-geo`: functional wrapper around `jgeohash` Java geo library
 
 ---
 
 ### App Error Hierarchy
 
 ```
-               AppFailure
-            /     |       \
-          /       |        \
-         /        |         \
-UserFailure InternalFailure UpstreamFailure
+                                             AppFailure
+                                           /     |       \
+                                         /       |        \
+                                        /        |         \
+                              UserFailure InternalFailure UpstreamFailure
 ```
 
 ---
@@ -492,6 +503,9 @@ case object Encryption extends InternalComponent
 case object Decryption extends InternalComponent
 case object ThreadPoolExhausted extends InternalComponent
 ```
+
+@[1-14](What the type looks like)
+@[16-19](Your components)
 
 ---
 
@@ -552,20 +566,19 @@ case class ServiceUnreachable (
 }
 ```
 
+@[1-14](Your type)
+@[16-52](Component example)
+
 ---
 
-A more nuanced example of programming in terms of the `cats-effect` typeclass API: Mongo driver wrapper
+### A more nuanced example of programming in terms of the `cats-effect` typeclass API: Mongo driver wrapper
 
 ---
 
 ```scala
 final class MongoCollectionWrapper(repr: MongoCollection) {
 
-  /** Ughhhh freaking lazy casbah barely wrapping Java. Use a builder pattern or something
-    * christ */
   repr.setReadPreference(Secondary.underlying)
-
-  import flatMapSyntax._
 
   def insertOneF[A <: Product, F[_] : Effect](
       a: A,
@@ -681,5 +694,13 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
   }
 
 ```
+
+---
+
+Done!
+
+* https://github.com/amilkov3/prelude-utils
+* Gitter: amilkov1
+* Email: amilkov3@gmail.com
 
 ---
