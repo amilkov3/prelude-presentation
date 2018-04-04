@@ -98,7 +98,9 @@ body {
 }
 
 .reveal .slides {
-  height: 80%
+  height: 80%;
+  top: 20px;
+  margin-top: 10px;
 }
 
 .reveal pre code {
@@ -107,6 +109,14 @@ body {
   max-height: 50vh !important;
   opacity: 0.95;
   border-radius: 10px;
+}
+
+.reveal .slides>section {
+  min-height: 90%;
+}
+
+.reveal .slides>section>section {
+  min-height: 100%;
 }
 
 .reveal .slides section .code-presenting-annotation {
