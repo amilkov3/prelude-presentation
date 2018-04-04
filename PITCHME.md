@@ -113,7 +113,7 @@ for {
 
 ---
 
-### So how can we apply composition and RT to side-effect?
+### So how can we apply composition and RT to side-effects?
 
 ---
 
@@ -127,14 +127,14 @@ val res: Array[Byte] = httpClient.get("https://en.wikipedia.org/wiki/Side_effect
 
 @[1](This is perfectly legal)
 
-Where Haskell requires you perform all effects in `IO` So we need an `IO` monad for Scala that
+Where Haskell requires you perform all effects in `IO`. So we need an `IO` monad for Scala that
 has referential transparity as a property unlike `Future` for example
 
 #### Enter `cats-effect`
 
 ---
 
-![typeclasses](assets/cats-effect.png)
+--?image=assets/cats-effect.png&position=center&size=auto 80%
 
 ---
 
