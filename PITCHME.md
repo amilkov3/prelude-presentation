@@ -134,7 +134,7 @@ has referential transparity as a property unlike `Future` for example
 
 ---
 
---?image=assets/cats-effect.png&position=center&size=auto 80%
+---?image=assets/cats-effect.png&position=center&size=auto 80%
 
 ---
 
