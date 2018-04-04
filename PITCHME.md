@@ -299,9 +299,9 @@ object CacheableKVPair {
 }
 ```
 
-@[1-14](Typeclass for serializing a cache key or value `In` to the underlying cache's key type `Out`)
-@[14-25](Typeclass for deserialzing the underlying cache value representation `Out` to a type `In`)
-@[25-34](Typeclass used simply to create a compilation constraint ensuring that a key value pair `K` `V` may be cacheable)
+@[1-17](Typeclass for serializing a cache key or value `In` to the underlying cache's key type `Out`)
+@[18-33](Typeclass for deserialzing the underlying cache value representation `Out` to a type `In`)
+@[35-47](Typeclass used simply to create a compilation constraint ensuring that a key value pair `K` `V` may be cacheable)
 
 ---
 
@@ -374,120 +374,4 @@ sync[F](mongo.insert(caseClassInst.toDBObject))
 So you see how we can very neatly compose an expression tree, an in memory representation of our program
 that can be executed when we so choose, via `unsafePerformIO()` or async via `unsafePerformAsync(cb)` making it easier to reason about what we're writing and increasing
 testability
-
----
-
-### 3. No imperative muddling
-
-
-This is Java, not Scala, or at least not functional Scala
-
-In Haskell the only way to simulate imperative programming is via monadic composition
-
-```haskell
-main :: IO ()
-main = do
-  line <- getLine
-  let res = "you said: " ++ line
-  putStrLn res
-```
-
-Obviously the equivalent in Scala would be akin to:
-
-```scala
-for {
-  x <- Some(5)
-  y <- Some(x + 3)
-} yield y
-```
-
- which generally leads to, again, increased composability and
-more explicit semantics behind whatever computation you are performing
-
----
-
-
-### HTTP
-
-Here's what the interface looks like:
-
-```scala
-trait EfJsonHttpClient[F[_]] extends {
-
-  // `JsonDecodable` just points to typeclass `io.circe.Decoder[A]`
-  def get[A: JsonDecodable](url: Url): F[HttpResponse[Either[JsonErr, A]]]
-
-  // same with `JsonEncodable`
-  def post[A: JsonEncodable](
-    url: Url,
-    body: A,
-    headers: Map[String, String] = Map.empty
-  ): F[HttpResponse[Unit]]
-}
-
-
-```
-
-This is a simple wrapper around the `com.softwaremill.sttp` library, which already employs a similar effect abstraction pattern
-and allows you to wrap whatever underlying client you so choose
-
-
----
-
-### And our impl
-
-```scala
-final class JsonHttpClient[F[_]: Effect](
-  conf: HttpConfig
-  )(implicit ev: SttpBackend[F, Nothing])
-  extends EfJsonHttpClient[F]{
-
-  private val baseC = sttp.readTimeout(conf.connectionTimeout)
-
-  def respAsJson[B](implicit ev: JsonDecodable[B]): ResponseAs[Either[JsonErr, B], Nothing] = {
-    asString.map{s =>
-      for {
-        json <- Json.parse(s).leftMap(_.asInstanceOf[JsonErr])
-        b <- ev.decodeJson(json.repr).leftMap(err => (new JsonDecodeErr(err.getMessage())): JsonErr)
-      } yield b
-    }
-  }
-
-  override def get[A: JsonDecodable](url: Url): F[HttpResponse[Either[JsonErr, A]]] = {
-    baseC
-      .get(SUrl(
-        url.scheme.asString,
-        None,
-        url.host.repr,
-        None,
-        url.path.toList,
-        List.empty[SUrl.QueryFragment],
-        None
-      ))
-      .response(respAsJson[A])
-      .send[F]()
-      .map(new HttpResponse(_))
-  }
-
-  override def post[A: JsonEncodable](
-    url: Url,
-    body: A,
-    headers: Map[String, String]
-  ): F[HttpResponse[Unit]] = {
-    baseC
-      .post(Url(
-        url.scheme.asString,
-        None,
-        url.host.repr,
-        url.port,
-        url.path.toList,
-        List.empty[Url.QueryFragment],
-        None
-      ))
-      .body(body.toJson.spaces2, StandardCharsets.UTF_8.name)
-      .send[F]()
-      .map(new HttpResponse(_).mapBody(_ => ()))
-  }
-}
-```
 
