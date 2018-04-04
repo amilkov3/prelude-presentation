@@ -157,11 +157,6 @@ This pattern will serve as the foundation for:
 * HTTP wrapper
 * Cache wrapper
 
-And then some unrelated useful components:
-* _Error hierarchy_
-* _Json_
-* _Geo_
-
 ---
 
 ### HTTP wrapper
@@ -247,7 +242,59 @@ class JsonHttpClient[F[_]: Effect](
 
 ---
 
-### Cache typeclass
+### Example
+
+```scala
+@JsonCodec(decodeOnly = true)
+case class Post(
+  userId: Int,
+  id: Int,
+  title: String,
+  body: String
+)
+
+implicit lazy val sttpBackend: SttpBackend[IO, Nothing] =
+  new IOHttpURLConnectionBackend
+
+class IOHttpURLConnectionBackend extends SttpBackend[IO, Nothing] {
+
+  val client = HttpURLConnectionBackend()
+
+  override def send[T](request: Request[T, Nothing]): IO[Response[T]] =
+    IO(client.send(request))
+
+  override def close(): Unit = ()
+
+  /** Translates `cats.MonadError` to `com.softwaremill.sttp.MonadError[IO]` */
+  override def responseMonad: com.softwaremill.sttp.MonadError[IO] = new com.softwaremill.sttp.MonadError[IO] {
+    override def error[T](t: Throwable): IO[T] = IO.raiseError(t)
+    override def flatMap[T, T2](fa: IO[T])(f: T => IO[T2]): IO[T2] = fa.flatMap(f)
+    override def unit[T](t: T): IO[T] = IO(t)
+    override def map[T, T2](fa: IO[T])(f: T => T2): IO[T2] = fa.map(f)
+    override def handleWrappedError[T](rt: IO[T])(h: PartialFunction[Throwable, IO[T]]): IO[T] = rt.recoverWith(h)
+  }
+}
+
+val client = new JsonHttpClient[IO](new HttpClientConf {
+  override val readTimeout: FiniteDuration = 2.seconds
+})
+
+val url = Url(
+  Host.unsafeCreate("jsonplaceholder.typicode.com"),
+  Path.unsafeCreate("/posts/1"),
+  true
+)
+
+val res: HttpResponse[Either[JsonErr, Post]] =
+  client.get[Post](url).unsafeRunSync()
+```
+
+@[1-28](sttp backend impl and our type)
+@[30-41](our call)
+
+---
+
+### Cache typeclasses
 
 ```scala
 trait SerializableKV[In] {
@@ -401,73 +448,238 @@ property("should put and get, serializing and deserializing correctly") {
 
 ---
 
-### Effect Abstraction
+### Extraneous additional util features
 
-We've all seen code like this which is perfectly legal regretably:
+* App Error Hierarchy
+* `prelude-mongo` -- functional wrapper around Mongo Casbah driver
 
-```scala
-// perform IO willy nilly
-val res = mongoColl.find(query)
-```
-
-What is better is:
-
-```scala
-Either.catchNonFatal(mongoColl.find(query))
-```
-
-But this is cheating/not giving you the full picture:
-
-```scala
-trait Sync[F[_]] {
-  def sync[A](f: F[A]): F[A]
-}
-
-def find[F: Sync](q: DBOBject) = sync[F](mongoUserColl.find(q))
-
-```
-
-All effects must be performed inside of an effect typeclass API (in Haskell the defacto instance of this typeclass (called `MonadIO` is the `IO` monad. Now Scala has `IO` and effectful typeclasses too. This forces the developer to handle/reason about effects appropriately
+* `prelude-geo` -- functional wrapper around `jgeohash` Java geo library
 
 ---
 
-### 2. Referential transparency
-
-```scala
-val ref: F[Either[Throwable, WriteResult]] = find(someQuery).attempt
-
-// we don't lose RT until we actually perform the effect at the end of the world
-ref.unsafePerformIO: Either[Throwable, WriteResult]
-
-// for clarity, basically the same as:
-Either.catchNonFatal(find(someQuery).unsafePerformIO): Either[Throwable, WriteResult]
+### App Error Hierarchy
 
 ```
+               AppFailure
+            /     |       \
+          /       |        \
+         /        |         \
+UserFailure InternalFailure UpstreamFailure
+```
 
-Lets do something a bit more involved:
+---
+
+### `InternalFailure`
 
 ```scala
+final case class InternalFailure private(
+  desc: String,
+  component: InternalComponent,
+  cause: Option[Throwable] = None
+)  extends  AppFailure {
 
-// say we have a unique index and we want to catch `com.mongodb.DuplicateKeyException` exceptions
-sync[F](mongo.insert(caseClassInst.toDBObject))
-  .handleErrorWith {
-    case dupErr: com.mongodb.DuplicateKeyException =>
-      ApplicativeError[F, Throwable].raiseError[WriteResult](
-        new UpsException(
-          UpstreamFailure(DuplicateRecord(caseClassInst))
+  override val message: String = s"${component.toString} failed with: $desc"
+}
+
+object InternalFailure {
+  def apply(message: String, component: InternalComponent) = {
+    new InternalFailure(message, component)
+  }
+}
+
+trait InternalComponent
+case object Encryption extends InternalComponent
+case object Decryption extends InternalComponent
+case object ThreadPoolExhausted extends InternalComponent
+```
+
+---
+
+### `UpstreamFailure`
+
+```scala
+/** Represents a failure in some upstream component like a db or service */
+final case class UpstreamFailure private (
+  component: UpstreamComponent,
+  cause: Option[Throwable] = None
+) extends AppFailure {
+
+  override val message: String = s"Upstream failure. Info: ${component.message}"
+}
+
+object UpstreamFailure {
+  def apply(component: UpstreamComponent): UpstreamFailure = {
+    new UpstreamFailure(component)
+  }
+}
+
+/** Extend this to add upstream components that may fail, like db ops for example */
+trait UpstreamComponent {
+  def code: Int
+  def message: String
+}
+
+trait ServiceFailure extends UpstreamComponent {
+  def name: String
+  override val code = 503
+}
+
+/** Service returned a success, but payload could not be decoded */
+case class ServiceInvalidPayload (
+  name: String,
+  payload: InvalidPayload
+) extends ServiceFailure {
+  override val message: String = s"Invalid payload from $name. Info: ${payload.message}"
+}
+
+/** Service returned an error */
+case class ServiceHttpError (
+  name: String,
+  respCode: Int,
+  body: String
+) extends ServiceFailure {
+  override val message: String = s"$name call returned a $respCode. Body: $body"
+}
+
+/** Http client couldn't even reach the service */
+case class ServiceUnreachable (
+  name: String,
+  url: Url,
+  ex: Throwable
+) extends ServiceFailure {
+  override val message: String =
+    s"Error while contacting service: $name. URL: ${url.show}. Info: ${ex.getMessage}"
+}
+```
+
+---
+
+A more nuanced example of programming in terms of the `cats-effect` typeclass API: Mongo driver wrapper
+
+---
+
+```scala
+final class MongoCollectionWrapper(repr: MongoCollection) {
+
+  /** Ughhhh freaking lazy casbah barely wrapping Java. Use a builder pattern or something
+    * christ */
+  repr.setReadPreference(Secondary.underlying)
+
+  import flatMapSyntax._
+
+  def insertOneF[A <: Product, F[_] : Effect](
+      a: A,
+      checkUniquenessWith: MongoDBObject = DBObject.empty
+  )(implicit
+    ev: BsonCodec.Aux[A, BsonDocument],
+    tt: TypeTag[A]
+  ): F[Unit] = {
+    checkUniquenessWith.isEmpty.fold(
+          ().pure[F],
+          repr.findOne(checkUniquenessWith).empty.fold(
+            ().pure[F],
+            ApplicativeError[F, Throwable].raiseError[Unit](
+              new UpsException(
+                UpstreamFailure(DuplicateRecord(a))
+              )
+            )
+          )
+        ).attempt
+          .flatMap(either =>
+            ApplicativeError[F, Throwable].fromEither[WriteResult](
+              either.map(_ => repr.insert(new BasicDBObject(ev.encode(a))))
+            )
+          )
+          .handleErrorWith {
+            case dupErr: UpsException =>
+              ApplicativeError[F, Throwable].raiseError[WriteResult](dupErr)
+            case ex =>
+              ApplicativeError[F, Throwable].raiseError[WriteResult](
+                new UpsException(
+                  UpstreamFailure(WriteFailure(ex.getMessage))
+                )
+              )
+          }.flatMap {
+          _.wasAcknowledged().fold(
+            ().pure[F],
+            ApplicativeError[F, Throwable].raiseError[Unit](
+              new UpsException(
+                UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
+              )
+            )
+          )
+        }
+    }
+
+  def upsertOneF[A <: Product, F[_] : Effect](
+      a: A,
+      queryDbO: DBObject,
+      upsert: Boolean = true
+    )(implicit
+      ev: BsonCodec.Aux[A, BsonDocument],
+      tt: TypeTag[A]
+    ): F[Boolean] = {
+        delay[F](repr.update(queryDbO, new BasicDBObject(ev.encode(a)), upsert))
+          .handleErrorWith {
+            case _: DuplicateKeyException =>
+              ApplicativeError[F, Throwable].raiseError[WriteResult](
+                new UpsException(
+                  UpstreamFailure(DuplicateRecord(a))
+                )
+              )
+            case ex =>
+              ApplicativeError[F, Throwable].raiseError[WriteResult](
+                new UpsException(
+                  UpstreamFailure(WriteFailure(ex.getMessage))
+                )
+              )
+          }.flatMap {
+          res => res.wasAcknowledged().fold(
+            (res.getN() == 1).fold(
+              (!res.isUpdateOfExisting()).pure[F],
+              ApplicativeError[F, Throwable].raiseError[Boolean](
+                new UpsException(
+                  UpstreamFailure(RecNotFound(
+                    s"${upsert.fold("upsert failed", "update failed. Record likely not found.")}. Record queried with: ${queryDbO.asString}"
+                  ))
+                )
+              )
+            ),
+            ApplicativeError[F, Throwable].raiseError[Boolean](
+              new UpsException(
+                UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
+              )
+            )
+          )
+        }
+    }
+
+  def deleteOneF[F[_]: Effect](queryDbO: DBObject): F[Unit] = {
+    delay[F](repr.findAndRemove(queryDbO))
+      .flatMap(_.isDefined.fold(
+        ().pure[F],
+        ApplicativeError[F, Throwable].raiseError[Unit](
+          throw new UpsException(
+            UpstreamFailure(RecNotFound(queryDbO.asString))
+          )
         )
-      )
-    case ex =>
-      ApplicativeError[F, Throwable].raiseError[WriteResult](
-        new UpsException(
-          UpstreamFailure(WriteFailure(ex.getMessage))
+      ))
+  }
+
+  def deleteManyF[F[_]: Effect](queryDbO: DBObject): F[Unit] = {
+    delay[F](repr.remove(queryDbO))
+      .flatMap(_.wasAcknowledged().fold(
+        ().pure[F],
+        ApplicativeError[F, Throwable].raiseError[Unit](
+          throw new UpsException(
+            UpstreamFailure(
+              WriteFailure(s"${queryDbO.asString} deleteMany write was not acknowledged")
+            )
+          )
         )
-      )
+      ))
   }
 
 ```
 
-So you see how we can very neatly compose an expression tree, an in memory representation of our program
-that can be executed when we so choose, via `unsafePerformIO()` or async via `unsafePerformAsync(cb)` making it easier to reason about what we're writing and increasing
-testability
-
+---
