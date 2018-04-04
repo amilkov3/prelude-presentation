@@ -149,6 +149,21 @@ def getArticle[F[_]](implicit ev: Sync[F]): F[Array[Byte]] =
 
 @[2-3](`Sync` typeclass has a lazy `delay` method to suspend an effect)
 
+---
+
+### Utils
+
+This pattern will serve as the foundation for:
+* _HTTP wrapper_
+* _Cache wrapper_
+
+And then some unrelated useful components:
+* _Error hierarchy_
+* _Json_
+* _Geo_
+
+---
+
 ### Effect Abstraction
 
 We've all seen code like this which is perfectly legal regretably:
@@ -250,21 +265,6 @@ more explicit semantics behind whatever computation you are performing
 
 ---
 
-### Utils
-
-Piggy backing off of effect abstraction:
-* _Effect typeclasses_
-
-Which will serve as the foundation for:
-* _HTTP wrapper_
-* _Cache wrapper_
-
-And then some unrelated useful components:
-* _Error hierarchy_
-* _Json_
-* _Geo_
-
----
 
 ### HTTP
 
