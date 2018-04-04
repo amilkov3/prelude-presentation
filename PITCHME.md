@@ -594,23 +594,23 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
       Effect[F].delay(repr.findOne(checkUniquenessWith)).flatMap(_.empty.fold(
         ().pure[F],
         ApplicativeError[F, Throwable].raiseError[Unit](
-          new UpsException(
+          new AppException(
             UpstreamFailure(DuplicateRecord(a))
           )
         )
       ))
-    ).attempt
+    ).attempt // F[Either[Throwable, Unit]]
       .flatMap(either =>
         ApplicativeError[F, Throwable].fromEither[WriteResult](
           either.map(_ => repr.insert(new BasicDBObject(ev.encode(a))))
         )
-      )
+      ) // F[WriteResult]
       .handleErrorWith {
-        case dupErr: UpsException =>
+        case dupErr: AppException =>
           ApplicativeError[F, Throwable].raiseError[WriteResult](dupErr)
         case ex =>
           ApplicativeError[F, Throwable].raiseError[WriteResult](
-            new UpsException(
+            new AppException(
               UpstreamFailure(WriteFailure(ex.getMessage))
             )
           )
@@ -618,7 +618,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
       _.wasAcknowledged().fold(
         ().pure[F],
         ApplicativeError[F, Throwable].raiseError[Unit](
-          new UpsException(
+          new AppException(
             UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
           )
         )
@@ -638,13 +638,13 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
       .handleErrorWith {
         case _: DuplicateKeyException =>
           ApplicativeError[F, Throwable].raiseError[WriteResult](
-            new UpsException(
+            new AppException(
               UpstreamFailure(DuplicateRecord(a))
             )
           )
         case ex =>
           ApplicativeError[F, Throwable].raiseError[WriteResult](
-            new UpsException(
+            new AppException(
               UpstreamFailure(WriteFailure(ex.getMessage))
             )
           )
@@ -653,7 +653,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
           (res.getN() == 1).fold(
             (!res.isUpdateOfExisting()).pure[F],
             ApplicativeError[F, Throwable].raiseError[Boolean](
-              new UpsException(
+              new AppException(
                 UpstreamFailure(RecNotFound(
                   s"${upsert.fold("upsert failed", "update failed. Record likely not found.")}. Record queried with: ${queryDbO.asString}"
                 ))
@@ -661,7 +661,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
             )
           ),
           ApplicativeError[F, Throwable].raiseError[Boolean](
-            new UpsException(
+            new AppException(
               UpstreamFailure(WriteFailure(s"${tt.tpe} write was not acknowledged by Mongo"))
             )
           )
@@ -674,7 +674,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
       .flatMap(_.isDefined.fold(
         ().pure[F],
         ApplicativeError[F, Throwable].raiseError[Unit](
-          throw new UpsException(
+          throw new AppException(
             UpstreamFailure(RecNotFound(queryDbO.asString))
           )
         )
@@ -686,7 +686,7 @@ final class MongoCollectionWrapper(repr: MongoCollection) {
       .flatMap(_.wasAcknowledged().fold(
         ().pure[F],
         ApplicativeError[F, Throwable].raiseError[Unit](
-          throw new UpsException(
+          throw new AppException(
             UpstreamFailure(
               WriteFailure(s"${queryDbO.asString} deleteMany write was not acknowledged")
             )
