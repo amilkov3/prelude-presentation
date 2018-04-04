@@ -97,6 +97,10 @@ body {
   box-shadow : none;
 }
 
+.reveal .present {
+  top: 20px;
+}
+
 .reveal .slides {
   height: 80%;
   top: 20px;
